@@ -1,33 +1,3 @@
-┌─────────────────────────┐
-│ User Business Question  │
-└────────────┬────────────┘
-│
-▼
-┌─────────────────────────┐
-│   LangChain SQL Agent   │
-└────────────┬────────────┘
-│ 1. Fetch Schema (sql_db_list_tables & sql_db_schema)
-▼
-┌─────────────────────────┐
-│  Gemini 2.5 Flash LLM   │
-└────────────┬────────────┘
-│ 2. Generate Candidate Query
-▼
-┌─────────────────────────┐
-│   SQL Query Checker     │ (sql_db_query_checker)
-└────────────┬────────────┘
-│ 3. Execute Validated SELECT Query
-▼
-┌─────────────────────────┐
-│   PostgreSQL Database   │
-└────────────┬────────────┘
-│ 4. Formatted Business Insight
-▼
-┌─────────────────────────┐
-│ Natural English Response│
-
----
-
 ##  2026 Industry Relevance & Target Enterprise Sectors
 
 In **2026**, legacy enterprise reporting suffers from heavy data team ticketing backlogs. Text-to-SQL agents allow frontline staff and executives to query live relational datasets instantly.
@@ -78,6 +48,51 @@ data-assistant/
 ├── main.py              # Main Agent execution loop and query validation
 ├── README.md             # Project documentation
 └── requirements.txt      # Project dependencies
+
+┌─────────────────────────┐
+│ User Business Question  │
+└────────────┬────────────┘
+│
+▼
+┌─────────────────────────┐
+│   LangChain SQL Agent   │
+└────────────┬────────────┘
+│ 1. Fetch Schema (sql_db_list_tables & sql_db_schema)
+▼
+┌─────────────────────────┐
+│  Gemini 2.5 Flash LLM   │
+└────────────┬────────────┘
+│ 2. Generate Candidate Query
+▼
+┌─────────────────────────┐
+│   SQL Query Checker     │ (sql_db_query_checker)
+└────────────┬────────────┘
+│ 3. Execute Validated SELECT Query
+▼
+┌─────────────────────────┐
+│   PostgreSQL Database   │
+└────────────┬────────────┘
+│ 4. Formatted Business Insight
+▼
+┌─────────────────────────┐
+│ Natural English Response│
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
