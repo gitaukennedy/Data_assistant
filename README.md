@@ -1,6 +1,6 @@
 ##  2026 Industry Relevance & Target Enterprise Sectors
 
-In **2026**, legacy enterprise reporting suffers from heavy data team ticketing backlogs. Text-to-SQL agents allow frontline staff and executives to query live relational datasets instantly.
+In **2026**, legacy enterprise reporting suffs from heavy data team ticketing backlogs. Text-to-SQL agents allow frontline staff and executives to query live relational datasets instantly.
 
 ### Target Sectors & Companies Operating in 2026
 
