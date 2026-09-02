@@ -1,43 +1,97 @@
+#!/usr/bin/env python3
+"""Main entry point for running the Data Assistant.
+
+Supports both CLI and web server modes:
+- CLI Mode: Direct terminal interaction
+- Web Mode: Flask API server with frontend
+"""
+
 import os
-import warnings
+import sys
+import argparse
 from dotenv import load_dotenv
-
-# Suppress non-critical deprecation warnings
-warnings.filterwarnings("ignore")
-
-from langchain_community.utilities import SQLDatabase
-from langchain_community.agent_toolkits import create_sql_agent
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 load_dotenv()
 
-# 1. Connect to PostgreSQL
-db_url = os.getenv("DATABASE_URL")
-db = SQLDatabase.from_uri(db_url)
-
-# 2. Initialize Supported Gemini LLM Engine
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    google_api_key=os.getenv("GEMINI_API_KEY"),
-    temperature=0
-)
-
-# 3. Create SQL Agent with Tool Calling
-agent_executor = create_sql_agent(
-    llm=llm,
-    db=db,
-    verbose=True,
-    agent_type="tool-calling"
-)
-
-def ask_data_assistant(question: str):
-    print(f"\n==========================================")
-    print(f"User Question: {question}")
-    print(f"==========================================\n")
+def run_cli_mode():
+    """Run Data Assistant in interactive CLI mode."""
+    from backend.agent.data_assistant import DataAssistant
+    from backend.utils.logger import setup_logger
     
-    response = agent_executor.invoke({"input": question})
-    print(f"\nFinal Answer: {response['output']}\n")
+    logger = setup_logger('cli')
+    logger.info("Starting Data Assistant in CLI mode...")
+    
+    try:
+        assistant = DataAssistant()
+        
+        print("\n" + "="*60)
+        print("Enterprise Text-to-SQL Data Assistant")
+        print("="*60)
+        print("Type your question or 'quit' to exit\n")
+        
+        while True:
+            question = input("You: ").strip()
+            
+            if question.lower() in ['quit', 'exit', 'q']:
+                print("\nGoodbye!")
+                break
+            
+            if not question:
+                continue
+            
+            result = assistant.answer_question(question)
+            print(f"\nAssistant: {result['answer']}\n")
+    
+    except Exception as e:
+        logger.error(f"Error in CLI mode: {e}")
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
-if __name__ == "__main__":
-    ask_data_assistant("What is the total revenue generated from Enterprise Subscriptions?")
-    ask_data_assistant("Which region has the highest number of customers?")
+def run_web_mode():
+    """Run Data Assistant as web server."""
+    from app import app
+    from backend.utils.logger import setup_logger
+    
+    logger = setup_logger('web')
+    port = int(os.getenv('FLASK_PORT', 5000))
+    
+    logger.info(f"Starting Data Assistant in Web mode on port {port}...")
+    print(f"\n🚀 Web UI available at http://localhost:{port}")
+    
+    app.run(
+        host='0.0.0.0',
+        port=port,
+        debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    )
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description='Enterprise Text-to-SQL Data Assistant'
+    )
+    parser.add_argument(
+        '--mode',
+        choices=['cli', 'web'],
+        default='web',
+        help='Run mode: cli for terminal, web for web server (default: web)'
+    )
+    
+    args = parser.parse_args()
+    
+    # Verify environment
+    if not os.getenv('GEMINI_API_KEY'):
+        print("Error: GEMINI_API_KEY not set. Please check your .env file.", file=sys.stderr)
+        sys.exit(1)
+    
+    if not os.getenv('DATABASE_URL'):
+        print("Error: DATABASE_URL not set. Please check your .env file.", file=sys.stderr)
+        sys.exit(1)
+    
+    # Run selected mode
+    if args.mode == 'cli':
+        run_cli_mode()
+    else:
+        run_web_mode()
+
+if __name__ == '__main__':
+    main()
