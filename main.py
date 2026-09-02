@@ -56,7 +56,7 @@ def run_web_mode():
     port = int(os.getenv('FLASK_PORT', 5000))
     
     logger.info(f"Starting Data Assistant in Web mode on port {port}...")
-    print(f"\n🚀 Web UI available at http://localhost:{port}")
+    print(f"\nWeb UI available at http://localhost:{port}")
     
     app.run(
         host='0.0.0.0',

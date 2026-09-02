@@ -88,34 +88,18 @@ python main.py --mode cli
 ## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│      Frontend (HTML/CSS/JS)         │
-│   - Chat interface                  │
-│   - Schema explorer                 │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│    Flask API Backend                │
-│   - /api/ask                        │
-│   - /api/database/info              │
-│   - /api/health                     │
-└──────────────┬──────────────────────┘
-               │
-       ┌───────┴───────┐
-       │               │
-       ▼               ▼
-  RAG Engine    Data Assistant Agent
-  - Schema         - LLM (Gemini)
-  - Context        - SQL Tools
-  - Embeddings     - Query Validator
-       │               │
-       └───────┬───────┘
-               │
-               ▼
-      PostgreSQL Database
-      - customers table
-      - orders table
+Presentational Layer (HTML/CSS/JavaScript)
+    |
+    v
+Flask REST API Backend
+    |
+    +-- RAG Engine              Data Assistant Agent
+    |   (Schema context)        (Gemini LLM + Tools)
+    |   (Embeddings)            (SQL Validation)
+    |
+    v
+PostgreSQL Database
+    (Customers & Orders Tables)
 ```
 
 ## Project Structure
@@ -155,12 +139,12 @@ Data_assisstant/
 
 ## Key Features
 
-✅ **Natural Language to SQL**: Ask questions in English, get results instantly
-✅ **RAG Enhancement**: Context-aware responses using vector embeddings
-✅ **Security First**: Query validation prevents destructive operations
-✅ **Beautiful UI**: Modern chat interface with schema explorer
-✅ **Production Ready**: Logging, error handling, rate limiting
-✅ **Multi-Mode**: CLI for testing, Web for production
+- Natural Language to SQL: Ask questions in English, get results instantly
+- RAG Enhancement: Context-aware responses using vector embeddings
+- Security First: Query validation prevents destructive operations
+- Professional UI: Clean chat interface with schema explorer
+- Production Ready: Logging, error handling, rate limiting
+- Multi-Mode: CLI for testing, Web for production
 
 ## Troubleshooting
 
@@ -180,18 +164,18 @@ Data_assisstant/
 
 ## Performance Tips
 
-1. **Indexing**: Add indexes on frequently queried columns
-2. **Connection Pooling**: Configured in SQLAlchemy
-3. **Caching**: RAG embeddings are persisted locally
-4. **Batch Operations**: Use for large data imports
+1. Indexing: Add indexes on frequently queried columns
+2. Connection Pooling: Configured in SQLAlchemy
+3. Caching: RAG embeddings are persisted locally
+4. Batch Operations: Use for large data imports
 
 ## Security Considerations
 
-1. **SQL Injection Prevention**: Query validator blocks dangerous patterns
-2. **Read-Only Queries**: Only SELECT statements allowed
-3. **Secrets Management**: Use .env for sensitive data
-4. **CORS Configuration**: Restricted to trusted origins
-5. **Rate Limiting**: Built-in protection against abuse
+1. SQL Injection Prevention: Query validator blocks dangerous patterns
+2. Read-Only Queries: Only SELECT statements allowed
+3. Secrets Management: Use .env for sensitive data
+4. CORS Configuration: Restricted to trusted origins
+5. Rate Limiting: Built-in protection against abuse
 
 ## Next Steps
 

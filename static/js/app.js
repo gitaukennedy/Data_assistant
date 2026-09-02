@@ -1,4 +1,4 @@
-"""Frontend JavaScript for Data Assistant."""
+// Frontend JavaScript for Data Assistant
 
 const API_BASE = '/api';
 let messageCount = 0;
@@ -21,10 +21,10 @@ function addWelcomeMessage() {
     const welcomeMsg = document.createElement('div');
     welcomeMsg.className = 'message assistant';
     welcomeMsg.innerHTML = `
-        <strong>Welcome!</strong>
-        <p>I'm your Enterprise Data Assistant. Ask me anything about your database:</p>
+        <strong>Welcome</strong>
+        <p>Enterprise Data Assistant. Ask questions about your database:</p>
         <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
-            <li>What's the total revenue?</li>
+            <li>What is the total revenue?</li>
             <li>Which regions have the most customers?</li>
             <li>Show me sales by product</li>
         </ul>
@@ -47,7 +47,7 @@ async function sendQuestion(event) {
     input.value = '';
     
     // Show loading state
-    const loadingMsg = addMessage('Thinking...', 'loading');
+    const loadingMsg = addMessage('Processing...', 'loading');
     const sendBtn = document.getElementById('send-btn');
     const status = document.getElementById('status');
     

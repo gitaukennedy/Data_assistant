@@ -53,10 +53,10 @@ try:
     with engine.connect() as connection:
         connection.execute(text(setup_sql))
         connection.commit()
-    print("✅ PostgreSQL database successfully seeded with business data!")
+    print("[SUCCESS] PostgreSQL database successfully seeded with business data!")
     print("\nDatabase schema:")
     print("- customers: customer_id, name, email, region, signup_date")
     print("- orders: order_id, customer_id, product, amount, order_date")
 except Exception as e:
-    print(f"❌ Error seeding database: {e}")
+    print(f"[ERROR] Error seeding database: {e}")
     exit(1)
