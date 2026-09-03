@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Data Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 Enterprise Data Assistant</h1>
+            <p>Ask questions. Get answers. No SQL required.</p>
+        </header>
+        
+        <div class="main-content">
+            <div class="chat-section">
+                <div class="messages" id="messages"></div>
+                
+                <div class="input-section">
+                    <form id="question-form" onsubmit="sendQuestion(event)">
+                        <div class="input-group">
+                            <input 
+                                type="text" 
+                                id="question-input" 
+                                placeholder="Ask your data question here..."
+                                autocomplete="off"
+                            />
+                            <button type="submit" id="send-btn">Send</button>
+                        </div>
+                        <div class="status" id="status"></div>
+                    </form>
+                </div>
+            </div>
+            
+            <aside class="sidebar">
+                <h3>Database Schema</h3>
+                <div id="schema-list" class="schema-list"></div>
+                <button id="refresh-schema" class="btn-secondary">Refresh Schema</button>
+            </aside>
+        </div>
+        
+        <footer>
+            <p>Powered by Google Gemini 2.5 Flash + PostgreSQL + LangChain</p>
+        </footer>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
