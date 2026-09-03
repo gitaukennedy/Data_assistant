@@ -2,7 +2,7 @@
 import os
 import logging
 from langchain_community.utilities import SQLDatabase
-from langchain_community.agent_toolkits import create_sql_agent
+from langchain_community.agent_toolkits.sql.base import create_sql_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 from backend.utils.rag_engine import RAGEngine
 from backend.utils.sql_validator import SQLValidator
@@ -74,7 +74,14 @@ class DataAssistant:
             
             # Execute agent
             response = self.agent_executor.invoke({
-                "input": question
+                "input": f"""You are answering a business analytics question.
+Only use read-only SELECT queries. Never run INSERT, UPDATE, DELETE, DROP, ALTER,
+CREATE, GRANT, REVOKE, or any other write/admin statement.
+
+Relevant schema context:
+{context}
+
+User question: {question}"""
             })
             
             answer = response.get('output', 'No answer generated')

@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+!.env.example
+venv
+env
+__pycache__
+*.py[cod]
+*.log
+chromadb
+.pytest_cache
+.vscode
+.idea
+CODE_QUALITY_AUDIT.md
+PRODUCT_DEMO.md
+SETUP.md

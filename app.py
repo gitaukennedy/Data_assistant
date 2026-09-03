@@ -2,8 +2,10 @@
 import os
 from flask import Flask, render_template
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
-from backend.routes.api import api_bp
+
 from backend.utils.logger import setup_logger
 
 load_dotenv()
@@ -16,10 +18,18 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 app.config['JSON_SORT_KEYS'] = False
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 
+# Initialize Limiter on app instance BEFORE importing or registering blueprints
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"]
+)
+
 # Enable CORS
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# Register blueprints
+# Register blueprints AFTER limiter is instantiated
+from backend.routes.api import api_bp
 app.register_blueprint(api_bp)
 
 @app.route('/')

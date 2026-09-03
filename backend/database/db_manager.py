@@ -1,6 +1,6 @@
 """Database connection and schema management."""
 import os
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 from langchain_community.utilities import SQLDatabase
 import logging
 
@@ -66,7 +66,7 @@ class DatabaseManager:
         """
         try:
             with self.engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             return True
         except Exception as e:
             logger.error(f"Health check failed: {e}")
