@@ -83,6 +83,7 @@ header p {
     border-radius: 8px;
     max-width: 85%;
     word-wrap: break-word;
+    white-space: pre-line;
     animation: slideIn 0.3s ease-in;
 }
 

@@ -14,7 +14,7 @@ gunicorn==23.0.0
 
 # Vector Database & RAG
 chromadb==0.4.21
-sentence-transformers==2.2.2
+sentence-transformers==2.7.0
 
 # Utilities
 python-dotenv==1.0.0

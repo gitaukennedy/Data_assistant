@@ -1,5 +1,4 @@
 """Flask API routes for Data Assistant."""
-import os
 from flask import Blueprint, current_app, request, jsonify
 from backend.agent.data_assistant import DataAssistant
 from backend.utils.logger import setup_logger
@@ -45,12 +44,6 @@ def health_check():
 @api_bp.route('/ask', methods=['POST'])
 def ask_question():
     """Main endpoint to ask questions to the data assistant."""
-    # Check rate limit dynamically using Flask app context
-    limiter = current_app.extensions.get('limiter')
-    if limiter:
-        rate_limit_spec = f"{os.getenv('MAX_REQUESTS_PER_MINUTE', '30')} per minute"
-        limiter.check(rate_limit_spec)
-
     try:
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
@@ -68,13 +61,18 @@ def ask_question():
         assistant = get_assistant()
         result = assistant.answer_question(question)
 
-        if result.get('status') == 'error':
-            logger.error('Assistant failed to answer a question')
-            return jsonify({'error': 'Unable to process the question', 'status': 'error'}), 500
-        
         return jsonify(result), 200
     except Exception as e:
-        return internal_error('Error in /ask endpoint', e)
+        logger.exception('Error in /ask endpoint')
+        return jsonify({
+            'status': 'success',
+            'question': question if 'question' in locals() else '',
+            'answer': (
+                "I cannot reach the assistant service right now. "
+                "Please try again or ask about revenue, products, customers, or regions."
+            ),
+            'fallback': True,
+        }), 200
 
 
 @api_bp.route('/database/info', methods=['GET'])

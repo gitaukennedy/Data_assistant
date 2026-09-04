@@ -2,9 +2,11 @@
 import os
 from sqlalchemy import create_engine, inspect, text
 from langchain_community.utilities import SQLDatabase
+from dotenv import load_dotenv
 import logging
 
 logger = logging.getLogger(__name__)
+load_dotenv()
 
 class DatabaseManager:
     """Manages database connections and schema operations."""
