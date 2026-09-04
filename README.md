@@ -76,37 +76,4 @@ data-assistant/
 ▼
 ┌─────────────────────────┐
 │ Natural English Response│
-
----
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-this are mine i will delete tommorrow please dont use 
-flask secret key:nsdHV4pqU2vtbowRx2CxpE14-TiM7_g9Rs_mk6GSl6Y
-
-gemini api: AIzaSyBdluJWzXdQ_3v517vMzj4EWCrShL6ac9E
-
-Web UI available at http://localhost:5000
- * Debugger is active!
- * Debugger PIN: 639-828-812
-
-
 └─────────────────────────┘
