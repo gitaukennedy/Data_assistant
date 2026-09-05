@@ -18,6 +18,12 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 app.config['JSON_SORT_KEYS'] = False
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5000').split(',')
+    if origin.strip()
+]
+
 # Initialize Limiter on app instance BEFORE importing or registering blueprints
 limiter = Limiter(
     key_func=get_remote_address,
@@ -25,8 +31,8 @@ limiter = Limiter(
     default_limits=["200 per day", "50 per hour"]
 )
 
-# Enable CORS
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# Enable CORS only for trusted origins
+CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
 
 # Register blueprints AFTER limiter is instantiated
 from backend.routes.api import api_bp

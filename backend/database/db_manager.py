@@ -1,5 +1,6 @@
 """Database connection and schema management."""
 import os
+from urllib.parse import urlparse, urlunparse
 from sqlalchemy import create_engine, inspect, text
 from langchain_community.utilities import SQLDatabase
 from dotenv import load_dotenv
@@ -8,18 +9,38 @@ import logging
 logger = logging.getLogger(__name__)
 load_dotenv()
 
+
+def normalize_database_url(raw_url: str) -> str:
+    """Convert deployment platform URLs into a SQLAlchemy-compatible PostgreSQL URL."""
+    if not raw_url:
+        return raw_url
+
+    url = raw_url.strip()
+    if url.startswith('postgres://'):
+        url = 'postgresql://' + url[len('postgres://'):]
+
+    parsed = urlparse(url)
+    if parsed.scheme == 'postgresql' and parsed.netloc and not parsed.path:
+        return url + '/postgres'
+
+    return url
+
+
 class DatabaseManager:
     """Manages database connections and schema operations."""
     
     def __init__(self):
         """Initialize database connection."""
-        self.db_url = os.getenv("DATABASE_URL")
-        if not self.db_url:
+        raw_db_url = os.getenv("DATABASE_URL")
+        if not raw_db_url:
             raise ValueError("DATABASE_URL environment variable not set")
+
+        self.db_url = normalize_database_url(raw_db_url)
+        logger.info(f"Using database URL: {self.db_url}")
         
         try:
             self.db = SQLDatabase.from_uri(self.db_url)
-            self.engine = create_engine(self.db_url)
+            self.engine = create_engine(self.db_url, pool_pre_ping=True)
             logger.info("Database connection established")
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")

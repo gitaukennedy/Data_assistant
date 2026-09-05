@@ -127,6 +127,44 @@ header p {
     font-style: italic;
 }
 
+.sales-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    margin-top: 0.5rem;
+}
+
+.sales-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 0.85rem;
+}
+
+.sales-table th,
+.sales-table td {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: top;
+}
+
+.sales-table thead th {
+    background: #eef4ff;
+    color: var(--text-dark);
+    font-weight: 700;
+}
+
+.sales-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.sales-table tbody tr:hover {
+    background: #f8faff;
+}
+
 .input-section {
     border-top: 1px solid var(--border-color);
     padding: 1rem;

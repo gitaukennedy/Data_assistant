@@ -73,13 +73,14 @@ async function sendQuestion(event) {
         }
         
         const data = await response.json();
-        
+
         if (data.status === 'error') {
             addMessage(`Error: ${data.error}`, 'error');
         } else {
-            addMessage(data.answer, 'assistant');
+            const answerText = extractAnswerText(data);
+            addMessage(answerText, 'assistant');
         }
-        
+
         status.textContent = 'Ready';
     } catch (error) {
         loadingMsg.remove();
@@ -91,21 +92,102 @@ async function sendQuestion(event) {
     }
 }
 
+function extractAnswerText(payload) {
+    if (payload == null) return 'No answer available';
+
+    if (typeof payload === 'string') return payload;
+
+    if (Array.isArray(payload)) {
+        const joined = payload
+            .map(item => extractAnswerText(item))
+            .filter(Boolean)
+            .join('\n\n');
+        return joined || 'No answer available';
+    }
+
+    if (typeof payload === 'object') {
+        if (typeof payload.answer === 'string') return payload.answer;
+        if (typeof payload.text === 'string') return payload.text;
+        if (typeof payload.output === 'string') return payload.output;
+        if (typeof payload.message === 'string') return payload.message;
+        if (Array.isArray(payload.content)) return extractAnswerText(payload.content);
+        if (Array.isArray(payload.parts)) return extractAnswerText(payload.parts);
+        if (typeof payload.answer === 'object') return extractAnswerText(payload.answer);
+        if (typeof payload.output === 'object') return extractAnswerText(payload.output);
+        return JSON.stringify(payload, null, 2);
+    }
+
+    return String(payload);
+}
+
+function buildSalesOrderTable(markdownText) {
+    const lines = String(markdownText || '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => line.startsWith('* '));
+
+    if (!lines.length) return null;
+
+    const rows = [];
+    for (const line of lines) {
+        const match = line.match(/\*\s*\*\*Order ID:\*\*\s*(\d+).*?\*\*Customer ID:\*\*\s*(\d+).*?\*\*Product:\*\*\s*([^,]+).*?\*\*Amount:\*\*\s*\$?([0-9,.]+).*?\*\*Order Date:\*\*\s*([^*]+)$/i);
+
+        if (!match) continue;
+
+        rows.push({
+            orderId: match[1],
+            customerId: match[2],
+            product: match[3].trim(),
+            amount: match[4],
+            orderDate: match[5].trim()
+        });
+    }
+
+    if (!rows.length) return null;
+
+    const headers = ['Order ID', 'Customer ID', 'Product', 'Amount', 'Order Date'];
+    const body = rows.map(row => `
+        <tr>
+            <td>${row.orderId}</td>
+            <td>${row.customerId}</td>
+            <td>${row.product}</td>
+            <td>$${Number(row.amount.replace(/,/g, '')).toFixed(2)}</td>
+            <td>${row.orderDate}</td>
+        </tr>
+    `).join('');
+
+    return `
+        <div class="sales-table-wrap">
+            <table class="sales-table">
+                <thead>
+                    <tr>${headers.map(header => `<th>${header}</th>`).join('')}</tr>
+                </thead>
+                <tbody>${body}</tbody>
+            </table>
+        </div>
+    `;
+}
+
 // Add message to chat
 function addMessage(content, type = 'assistant') {
     const messagesDiv = document.getElementById('messages');
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${type}`;
-    
-    // Escape HTML to prevent XSS
-    const escapedContent = document.createElement('div');
-    escapedContent.textContent = content;
-    
-    msgDiv.innerHTML = escapedContent.innerHTML;
     msgDiv.id = `msg-${messageCount++}`;
+
+    if (type === 'assistant') {
+        const markdownText = String(content || '');
+        const tableHtml = buildSalesOrderTable(markdownText);
+        msgDiv.innerHTML = tableHtml || marked.parse(markdownText);
+    } else {
+        const escapedContent = document.createElement('div');
+        escapedContent.textContent = String(content || '');
+        msgDiv.innerHTML = escapedContent.innerHTML;
+    }
+
     messagesDiv.appendChild(msgDiv);
     scrollToBottom();
-    
+
     return msgDiv;
 }
 

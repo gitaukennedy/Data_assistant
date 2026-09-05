@@ -1,4 +1,5 @@
 """Main Data Assistant Agent with LangChain."""
+import json
 import os
 import logging
 import re
@@ -87,6 +88,35 @@ class DataAssistant:
             logger.error(f"Failed to load AI agent components: {e}")
             raise
 
+    def _normalize_answer(self, payload):
+        """Normalize model output to one readable text string."""
+        if payload is None:
+            return "No concise answer could be generated."
+
+        if isinstance(payload, str):
+            return payload.strip() or "No concise answer could be generated."
+
+        if isinstance(payload, dict):
+            for key in ("output", "answer", "text", "message"):
+                if key in payload:
+                    normalized = self._normalize_answer(payload[key])
+                    if normalized and normalized != "No concise answer could be generated.":
+                        return normalized
+            if "content" in payload:
+                return self._normalize_answer(payload["content"])
+            if "parts" in payload:
+                return self._normalize_answer(payload["parts"])
+            return json.dumps(payload, ensure_ascii=False)
+
+        if isinstance(payload, list):
+            chunks = [self._normalize_answer(item) for item in payload if item is not None]
+            cleaned = [chunk for chunk in chunks if chunk and chunk != "No concise answer could be generated."]
+            if cleaned:
+                return "\n\n".join(cleaned)
+            return "No concise answer could be generated."
+
+        return str(payload)
+
     def answer_question(self, question: str) -> dict:
         """Process a user question and return formatted answer payload.
         
@@ -124,7 +154,8 @@ User Question: {question}"""
 
             # Execute LangChain SQL Agent Execution Cycle
             response = self.agent_executor.invoke({"input": input_prompt})
-            answer = response.get("output", "No concise answer could be generated.")
+            output_payload = response.get("output") if isinstance(response, dict) else response
+            answer = self._normalize_answer(output_payload)
             
             logger.info(f"Question processed successfully via Agent: {question[:50]}...")
             return {
@@ -151,6 +182,24 @@ User Question: {question}"""
                 "fallback": True,
             }
 
+    @staticmethod
+    def _format_sales_order_rows(rows):
+        """Format order rows as a readable markdown list for the UI."""
+        if not rows:
+            return "No sales orders found."
+
+        lines = ["Here are the sales orders:"]
+        for row in rows:
+            order_id = row.get("order_id")
+            customer_id = row.get("customer_id")
+            product = row.get("product")
+            amount = row.get("amount")
+            order_date = row.get("order_date")
+            lines.append(
+                f"* **Order ID:** {order_id}, **Customer ID:** {customer_id}, **Product:** {product}, **Amount:** ${float(amount):,.2f}, **Order Date:** {order_date}"
+            )
+        return "\n\n".join(lines)
+
     def _fast_path_answer(self, question: str):
         """Interprets common intents and minimalist keyword queries without an LLM round trip."""
         normalized = re.sub(r"[^a-z0-9 ]", " ", question.lower())
@@ -168,6 +217,25 @@ User Question: {question}"""
                 question,
                 "I can analyze database records for metrics on sales volume, product revenue, regional customer density, and average order metrics.",
             )
+
+        # Fast path for common queries that should not involve the slow SQL agent
+        if (
+            "sales order" in normalized or "sales orders" in normalized or "show orders" in normalized
+            or ("order" in normalized and "sales" in normalized)
+        ):
+            query = text(
+                "SELECT order_id, customer_id, product, amount, order_date "
+                "FROM orders ORDER BY order_date DESC LIMIT 10"
+            )
+            with self.db_manager.engine.connect() as connection:
+                rows = connection.execute(query).mappings().all()
+            return {
+                "status": "success",
+                "question": question,
+                "answer": self._format_sales_order_rows(rows),
+                "context_used": False,
+                "fast_path": True,
+            }
 
         # Keyword mapping to SQL queries
         if "total revenue" in normalized or "total sales" in normalized or normalized in {"revenue", "total revenue"}:
