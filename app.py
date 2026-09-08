@@ -18,14 +18,12 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 app.config['JSON_SORT_KEYS'] = False
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 
-allowed_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        'CORS_ORIGINS', 
-        'http://localhost:3000,http://localhost:5000,https://data-assistant.onrender.com'
-    ).split(',')
-    if origin.strip()
-]
+# Dynamically parse origins from env or fallback to wildcard for public deployment
+cors_origins_env = os.getenv('CORS_ORIGINS', '').strip()
+if cors_origins_env:
+    allowed_origins = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
+else:
+    allowed_origins = "*"
 
 # Initialize Limiter on app instance BEFORE importing or registering blueprints
 limiter = Limiter(
@@ -34,8 +32,8 @@ limiter = Limiter(
     default_limits=["200 per day", "50 per hour"]
 )
 
-# Enable CORS only for trusted origins
-CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
+# Enable CORS for all routes so health checks, frontends, and API endpoints work seamlessly
+CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=True if allowed_origins != "*" else False)
 
 # Register blueprints AFTER limiter is instantiated
 from backend.routes.api import api_bp
