@@ -20,7 +20,10 @@ app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 
 allowed_origins = [
     origin.strip()
-    for origin in os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5000').split(',')
+    for origin in os.getenv(
+        'CORS_ORIGINS', 
+        'http://localhost:3000,http://localhost:5000,https://data-assistant.onrender.com'
+    ).split(',')
     if origin.strip()
 ]
 
@@ -42,6 +45,11 @@ app.register_blueprint(api_bp)
 def index():
     """Serve frontend."""
     return render_template('index.html')
+
+@app.route('/health')
+def health_check():
+    """Lightweight health check endpoint for UptimeRobot monitoring."""
+    return {"status": "ok", "message": "Data Assistant is awake"}, 200
 
 @app.route('/api/version')
 def version():
