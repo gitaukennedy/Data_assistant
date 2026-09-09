@@ -1,7 +1,6 @@
-##  2026 Industry Relevance & Target Enterprise Sectors
-its a good project i will deploy it tommorrow yeah ots good for practic the mathmatical opjective is to solve a series of time in analysis and give more time for decesion making 
+##  2026 Industry Relevance & Target Enterprise Sectors 
 In **2026**, legacy enterprise reporting suffers from heavy data team ticketing backlogs. Text-to-SQL agents allow frontline staff and executives to query live relational datasets instantly.
-
+REFER TO AITOOLS  FOR ACTUARIES AND DS
 ### Target Sectors & Companies Operating in 2026
 
 1. **Insurance & Financial Services (e.g., Jubilee Life Insurance, Prudential, Allianz)**
