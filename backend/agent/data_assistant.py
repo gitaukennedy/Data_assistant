@@ -4,9 +4,6 @@ import os
 import logging
 import re
 from sqlalchemy import text
-from langchain_community.agent_toolkits.sql.base import create_sql_agent
-from langchain_google_genai import ChatGoogleGenerativeAI
-from backend.utils.rag_engine import RAGEngine
 from backend.utils.sql_validator import SQLValidator
 from backend.database.db_manager import DatabaseManager
 
@@ -38,13 +35,10 @@ class DataAssistant:
             self.db_manager = DatabaseManager()
             self.db = self.db_manager.db
             
-            # Initialize Google Gemini LLM
-            self.llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash",
-                google_api_key=os.getenv("GEMINI_API_KEY"),
-                temperature=0,
-                top_p=0.95
-            )
+            # Loaded only when a dynamic request needs the LangChain agent.
+            # This lets the app start even if the optional AI stack is not
+            # compatible with the active Python runtime.
+            self.llm = None
             self.rag_engine = None
             self.agent_executor = None
             logger.info("DataAssistant initialized with Database and Gemini model")
@@ -71,6 +65,16 @@ class DataAssistant:
             return
 
         try:
+            from langchain_community.agent_toolkits.sql.base import create_sql_agent
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            from backend.utils.rag_engine import RAGEngine
+
+            self.llm = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                google_api_key=os.getenv("GEMINI_API_KEY"),
+                temperature=0,
+                top_p=0.95,
+            )
             self.rag_engine = RAGEngine()
             self._populate_rag_with_schema()
             
@@ -285,16 +289,16 @@ User Question: {question}"""
             
         elif rows and "average_amount" in rows[0]:
             answer = "\n".join(
-                f"• {row['product']}: ${float(row['average_amount']):,.2f} average"
+                f"- {row['product']}: ${float(row['average_amount']):,.2f} average"
                 for row in rows
             )
         elif rows and "customer_count" in rows[0]:
             answer = "\n".join(
-                f"• {row['region']}: {row['customer_count']} customers" for row in rows
+                f"- {row['region']}: {row['customer_count']} customers" for row in rows
             )
         else:
             answer = "\n".join(
-                f"• {row['product']}: ${float(row['revenue']):,.2f}" for row in rows
+                f"- {row['product']}: ${float(row['revenue']):,.2f}" for row in rows
             )
 
         return {
