@@ -103,3 +103,78 @@ data-assistant/
 
 
 └─────────────────────────┘
+
+---
+
+## Quick start — setup, run, test, lint (Windows)
+
+1. Create and activate a virtual environment
+   - PowerShell (recommended):
+     - python -m venv .venv
+     - .\.venv\Scripts\Activate.ps1
+   - CMD:
+     - python -m venv .venv
+     - .\.venv\Scripts\activate.bat
+
+2. Install dependencies
+   - pip install --upgrade pip
+   - pip install -r requirements.txt
+
+3. Configure environment
+   - Copy `.env.example` to `.env` (or create `.env`) and set:
+     - DATABASE_URL=postgresql://user:pass@host:5432/dbname
+     - GEMINI_API_KEY=your_api_key_here
+     - Any other keys required by the project
+
+4. Prepare database (if present)
+   - python create_db.py
+   - python seed_db.py
+
+5. Run the application
+   - python main.py
+   - The app should start and listen (see console for logs)
+
+6. Run tests
+   - pip install pytest
+   - pytest -q
+
+7. Run linters (optional)
+   - pip install flake8
+   - flake8 .
+
+8. Create a PR
+   - Branch already created and pushed: gitaukennedy-phase-updates
+   - Opened PR for review. After approval, merge into main.
+
+
+## Phases & remaining bits
+
+Phase 1 — Setup & Data (Status: mostly complete)
+- What we did: project scaffolding, DB utilities (create_db/seed_db), basic README.
+- Remaining: confirm .env values, provision a Postgres instance for end-to-end runs.
+
+Phase 2 — Core Agent (Status: partial)
+- What we did: LangChain agent wiring and SQL safety checks (read-only enforcement).
+- Remaining: full integration tests against a real DB and secure secrets handling in CI.
+
+Phase 3 — Tests, CI, Deployment (Status: pending)
+- What we did: lightweight syntax checks and PR creation.
+- Remaining: add unit/integration tests, configure CI (GitHub Actions), provide Dockerfile or deployment docs, and run full lint/test pipeline.
+
+
+## Troubleshooting & notes
+- If `python main.py` fails with missing packages, ensure the virtualenv is active and requirements installed.
+- For DB connection errors, double-check DATABASE_URL and that Postgres accepts connections from your host.
+- For LLM/API errors, confirm GEMINI_API_KEY and any network/whitelisting requirements.
+
+
+## Next recommended steps (before merging)
+1. Populate `.env` with real values and run the app locally end-to-end.
+2. Add at least one integration test that runs a sample natural-language query against a seeded DB.
+3. Add GitHub Actions to run tests and linters on push/PR.
+4. Optionally add a Dockerfile and `docker-compose.yml` for local dev reproducibility.
+
+
+---
+
+_If anything should be changed in these instructions or you want expanded commands (Linux/macOS, CI YAML, or a sample .env.example), say which and it will be added._
