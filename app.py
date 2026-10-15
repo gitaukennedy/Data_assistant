@@ -17,6 +17,7 @@ logger = setup_logger('app')
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 app.config['JSON_SORT_KEYS'] = False
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
+app.config['EXPOSE_ERROR_DETAILS'] = False
 
 # Dynamically parse origins from env or fallback to wildcard for public deployment
 cors_origins_env = os.getenv('CORS_ORIGINS', '').strip()
@@ -29,7 +30,8 @@ else:
 limiter = Limiter(
     key_func=get_remote_address,
     app=app,
-    default_limits=["200 per day", "50 per hour"]
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri=os.getenv('RATELIMIT_STORAGE_URI', 'memory://'),
 )
 
 # Enable CORS for all routes so health checks, frontends, and API endpoints work seamlessly

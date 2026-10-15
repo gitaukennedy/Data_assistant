@@ -1,334 +1,284 @@
-"""Main Data Assistant Agent with LangChain."""
+"""Cost-conscious, safe Text-to-SQL assistant powered by Gemini."""
 import json
-import os
 import logging
+import os
 import re
-from sqlalchemy import text
-from backend.utils.sql_validator import SQLValidator
+from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy.exc import OperationalError
+
 from backend.database.db_manager import DatabaseManager
+from backend.utils.sql_validator import SQLValidator
 
 logger = logging.getLogger(__name__)
 
-CUSTOM_SYSTEM_PROMPT = """You are an expert enterprise Text-to-SQL assistant querying a relational database.
+DEFAULT_MODEL = "gemini-2.5-flash-lite"
+SQL_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {"sql": {"type": "string"}},
+    "required": ["sql"],
+    "additionalProperties": False,
+}
+DATA_QUERY_KEYWORDS = {
+    "amount", "customer", "customers", "database", "order", "orders", "product",
+    "products", "region", "regions", "revenue", "sale", "sales", "subscription",
+}
 
-Database Schema Context:
-1. customers (customer_id PRIMARY KEY, name, email, region, signup_date)
-2. orders (order_id PRIMARY KEY, customer_id, product, amount, order_date)
-
-Relationships & Join Rules:
-- Foreign Key: `orders.customer_id` references `customers.customer_id`.
-- For query metrics spanning customer location and order performance, perform explicit joins (`orders JOIN customers ON orders.customer_id = customers.customer_id`).
-
-Security & Operational Rules:
-- Only execute read-only SELECT queries. Never run INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, GRANT, or REVOKE statements.
-- Always verify column names against schema context before rendering SQL queries.
-- Formulate clear, concise, and professional natural language summaries for numerical outputs.
-"""
 
 class DataAssistant:
-    """Enterprise Text-to-SQL Data Assistant using Google Gemini."""
-    
-    def __init__(self):
-        """Initialize the Data Assistant with LLM, database, and RAG."""
+    """Uses direct SQL for common questions and one low-cost model call otherwise."""
+
+    def __init__(self, db_manager=None):
+        self.db_manager = db_manager or DatabaseManager()
+        self.model_name = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
+        self._client = None
+        logger.info("DataAssistant initialized; model=%s", self.model_name)
+
+    def _get_client(self):
+        """Initialize the SDK only when a custom question requires it."""
+        if self._client is None:
+            api_key = os.getenv("GEMINI_API_KEY")
+            if not api_key:
+                raise RuntimeError("GEMINI_API_KEY is not configured")
+            from google import genai
+            self._client = genai.Client(api_key=api_key)
+        return self._client
+
+    def _schema_context(self):
+        schemas = self.db_manager.get_table_schemas()
+        return "\n".join(
+            f"{table}: " + ", ".join(next(iter(column)) for column in details["columns"])
+            for table, details in schemas.items()
+        )
+
+    def _generate_sql(self, question):
+        """Generate structured SELECT SQL with a deliberately small output budget."""
+        prompt = f"""Generate exactly one PostgreSQL SELECT query for this business question.
+
+Allowed schema:
+{self._schema_context()}
+
+Rules:
+- Query only the tables and columns listed above.
+- Return the data needed to answer the question; use aggregation when appropriate.
+- Never use comments, semicolons, CTEs, system tables, data-modification statements, or SELECT INTO.
+- Prefer an explicit LIMIT for detail rows.
+
+Question: {question}"""
+        response = self._get_client().models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config={
+                "temperature": 0,
+                "max_output_tokens": 250,
+                "response_mime_type": "application/json",
+                "response_json_schema": SQL_RESPONSE_SCHEMA,
+            },
+        )
         try:
-            # Initialize database connection via DB Manager
-            self.db_manager = DatabaseManager()
-            self.db = self.db_manager.db
-            
-            # Loaded only when a dynamic request needs the LangChain agent.
-            # This lets the app start even if the optional AI stack is not
-            # compatible with the active Python runtime.
-            self.llm = None
-            self.rag_engine = None
-            self.agent_executor = None
-            logger.info("DataAssistant initialized with Database and Gemini model")
-        except Exception as e:
-            logger.error(f"Failed to initialize DataAssistant: {e}")
-            raise
+            sql = json.loads(response.text)["sql"].strip()
+        except (AttributeError, TypeError, ValueError, KeyError) as error:
+            raise ValueError("The model did not return valid SQL") from error
 
-    def _populate_rag_with_schema(self):
-        """Populate RAG engine with database schema documentation."""
-        try:
-            schemas = self.db_manager.get_table_schemas()
-            schema_docs = {
-                table: f"Table: {table}\nColumns: {', '.join([list(col.keys())[0] for col in info['columns']])}"
-                for table, info in schemas.items()
-            }
-            self.rag_engine.ingest_schema_documentation(schema_docs)
-            logger.info("RAG engine populated with schema documentation")
-        except Exception as e:
-            logger.warning(f"Failed to populate RAG: {e}")
+        is_safe, reason = SQLValidator.is_safe_query(sql)
+        if not is_safe:
+            raise ValueError(reason)
+        return sql
 
-    def _initialize_ai_components(self):
-        """Lazy load the embedding model and SQL agent only when fast-path bypass fails."""
-        if self.agent_executor is not None:
-            return
+    def _general_response(self, question):
+        """Answer ordinary conversation without requiring a database connection."""
+        response = self._get_client().models.generate_content(
+            model=self.model_name,
+            contents=(
+                "You are a concise, friendly data-assistant chat companion. "
+                "Answer the user's general question directly. Do not claim to have "
+                "looked up database records unless results were supplied to you.\n\n"
+                f"User question: {question}"
+            ),
+            config={"temperature": 0.3, "max_output_tokens": 160},
+        )
+        answer = (getattr(response, "text", None) or "").strip()
+        if not answer:
+            raise ValueError("The model returned an empty response")
+        return answer
 
-        try:
-            from langchain_community.agent_toolkits.sql.base import create_sql_agent
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            from backend.utils.rag_engine import RAGEngine
+    @staticmethod
+    def _local_nlp_sql(question):
+        """Interpret common business language locally when an LLM is unavailable.
 
-            self.llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash",
-                google_api_key=os.getenv("GEMINI_API_KEY"),
-                temperature=0,
-                top_p=0.95,
-            )
-            self.rag_engine = RAGEngine()
-            self._populate_rag_with_schema()
-            
-            self.agent_executor = create_sql_agent(
-                llm=self.llm,
-                db=self.db,
-                verbose=True,
-                agent_type="tool-calling",
-                max_iterations=5,
-                prefix=CUSTOM_SYSTEM_PROMPT,
-                handle_parsing_errors=True
-            )
-            logger.info("LangChain SQL Agent initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to load AI agent components: {e}")
-            raise
-
-    def _normalize_answer(self, payload):
-        """Normalize model output to one readable text string."""
-        if payload is None:
-            return "No concise answer could be generated."
-
-        if isinstance(payload, str):
-            return payload.strip() or "No concise answer could be generated."
-
-        if isinstance(payload, dict):
-            for key in ("output", "answer", "text", "message"):
-                if key in payload:
-                    normalized = self._normalize_answer(payload[key])
-                    if normalized and normalized != "No concise answer could be generated.":
-                        return normalized
-            if "content" in payload:
-                return self._normalize_answer(payload["content"])
-            if "parts" in payload:
-                return self._normalize_answer(payload["parts"])
-            return json.dumps(payload, ensure_ascii=False)
-
-        if isinstance(payload, list):
-            chunks = [self._normalize_answer(item) for item in payload if item is not None]
-            cleaned = [chunk for chunk in chunks if chunk and chunk != "No concise answer could be generated."]
-            if cleaned:
-                return "\n\n".join(cleaned)
-            return "No concise answer could be generated."
-
-        return str(payload)
-
-    def answer_question(self, question: str) -> dict:
-        """Process a user question and return formatted answer payload.
-        
-        Args:
-            question: User's natural language question
-            
-        Returns:
-            Dictionary containing response payload and operational metadata
+        This deliberately covers the project's known customer-and-order schema,
+        keeps all generated SQL read-only, and costs no model credits.
         """
-        if not question or not question.strip():
-            return {
-                "status": "error",
-                "question": question,
-                "answer": "Please provide a valid question.",
-                "context_used": False,
-            }
+        normalized = " ".join(re.findall(r"[a-z0-9]+", question.lower()))
+        wants_count = any(term in normalized for term in ("how many", "count", "number of", "total customers", "total orders"))
+        wants_average = any(term in normalized for term in ("average", "mean"))
+        wants_top = any(term in normalized for term in ("highest", "top", "most", "best"))
+        mentions_order = any(term in normalized for term in ("order", "sale", "revenue", "amount", "product"))
+        mentions_customer = any(term in normalized for term in ("customer", "client", "buyer", "region"))
 
+        if mentions_order:
+            if wants_top:
+                return "SELECT product, SUM(amount) AS revenue FROM orders GROUP BY product ORDER BY revenue DESC LIMIT 1"
+            if wants_average:
+                return "SELECT product, AVG(amount) AS average_amount FROM orders GROUP BY product ORDER BY average_amount DESC"
+            if wants_count:
+                return "SELECT COUNT(*) AS order_count FROM orders"
+            if "customer" in normalized or "client" in normalized or "buyer" in normalized:
+                return (
+                    "SELECT customers.name, customers.region, orders.product, orders.amount, orders.order_date "
+                    "FROM orders JOIN customers ON orders.customer_id = customers.customer_id "
+                    "ORDER BY orders.order_date DESC"
+                )
+            if "product" in normalized or "sales" in normalized or "revenue" in normalized:
+                return "SELECT product, SUM(amount) AS revenue FROM orders GROUP BY product ORDER BY revenue DESC"
+            return "SELECT order_id, customer_id, product, amount, order_date FROM orders ORDER BY order_date DESC"
+
+        if mentions_customer:
+            if wants_count and "region" not in normalized:
+                return "SELECT COUNT(*) AS customer_count FROM customers"
+            if "region" in normalized:
+                return "SELECT region, COUNT(*) AS customer_count FROM customers GROUP BY region ORDER BY customer_count DESC"
+            if "name" in normalized or "email" in normalized or "list" in normalized or "show" in normalized:
+                return "SELECT customer_id, name, email, region, signup_date FROM customers ORDER BY customer_id"
+            return "SELECT customer_id, name, region, signup_date FROM customers ORDER BY customer_id"
+        return None
+
+    @staticmethod
+    def _local_nlp_response(question):
+        """Keep offline conversation useful rather than returning a generic error."""
+        normalized = " ".join(re.findall(r"[a-z]+", question.lower()))
+        if normalized in {"ok", "okay", "cool", "great", "good"}:
+            return "Great. Ask naturally about customers, orders, sales, products, or regions."
+        if "data assistant" in normalized or "what can you do" in normalized:
+            return "Yes. I can understand natural-language questions about customers and orders, then return the matching data."
+        return (
+            "I understood your question. This installation is currently operating in local data mode, "
+            "so I can directly analyze customers, orders, products, revenue, and regions."
+        )
+
+    @staticmethod
+    def _is_data_question(question):
+        words = set(re.findall(r"[a-z]+", question.lower()))
+        return bool(words & DATA_QUERY_KEYWORDS)
+
+    @staticmethod
+    def _display_value(value):
+        if isinstance(value, Decimal):
+            return f"{value:.2f}"
+        if isinstance(value, (date, datetime)):
+            return value.isoformat()
+        return str(value)
+
+    @classmethod
+    def _format_rows(cls, rows):
+        """Create a Markdown table locally, avoiding a second paid model call."""
+        if not rows:
+            return "No matching records were found."
+        headers = list(rows[0])
+        output = [
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join("---" for _ in headers) + " |",
+        ]
+        for row in rows:
+            values = [cls._display_value(row.get(column, "")).replace("|", "\\|") for column in headers]
+            output.append("| " + " | ".join(values) + " |")
+        return "\n".join(output)
+
+    def answer_question(self, question):
+        """Answer a user question, keeping common paths entirely free of LLM usage."""
+        if not question or not question.strip():
+            return {"status": "error", "question": question, "answer": "Please provide a valid question.", "context_used": False}
         try:
-            # Check fast-path cache / exact pattern matching first
             fast_result = self._fast_path_answer(question)
             if fast_result is not None:
                 return fast_result
 
-            # Initialize LangChain Agent & RAG lazily
-            self._initialize_ai_components()
-            
-            # Retrieve Schema Context from Vector Store
-            context = self.rag_engine.build_context_prompt(question)
-            
-            # Formulate structured prompt input
-            input_prompt = f"""Relevant schema and relationship context:
-{context}
+            if not self._is_data_question(question):
+                try:
+                    answer = self._general_response(question)
+                    return {
+                        "status": "success", "question": question, "answer": answer,
+                        "context_used": False, "general_chat": True,
+                    }
+                except Exception as error:
+                    logger.info("Remote general chat unavailable; using local NLP: %s", error)
+                    return {
+                        "status": "success", "question": question,
+                        "answer": self._local_nlp_response(question),
+                        "context_used": False, "local_nlp": True,
+                    }
 
-User Question: {question}"""
-
-            # Execute LangChain SQL Agent Execution Cycle
-            response = self.agent_executor.invoke({"input": input_prompt})
-            output_payload = response.get("output") if isinstance(response, dict) else response
-            answer = self._normalize_answer(output_payload)
-            
-            logger.info(f"Question processed successfully via Agent: {question[:50]}...")
+            sql = self._local_nlp_sql(question)
+            if sql is None:
+                sql = self._generate_sql(question)
+            rows = self.db_manager.execute_safe_select(sql)
             return {
-                "status": "success",
-                "question": question,
-                "answer": answer,
-                "context_used": len(context) > 0,
-                "fast_path": False
+                "status": "success", "question": question, "answer": self._format_rows(rows),
+                "context_used": sql is not None, "fast_path": False,
+                "local_nlp": self._local_nlp_sql(question) is not None,
+            }
+        except OperationalError:
+            # Do not make the UI look like the model failed when the database is
+            # unavailable. Connection credentials are deployment configuration,
+            # not a user-question error.
+            logger.warning("Database unavailable while answering a question")
+            return {
+                "status": "success", "question": question,
+                "answer": "I cannot reach the data source right now. Please check the PostgreSQL connection settings, then try again.",
+                "context_used": False, "fallback": True, "database_unavailable": True,
+            }
+        except Exception as error:
+            logger.warning("Question could not be completed: %s", error)
+            return {
+                "status": "success", "question": question,
+                "answer": self._local_nlp_response(question),
+                "context_used": False, "fallback": True, "local_nlp": True,
             }
 
-        except Exception as e:
-            logger.exception(f"Error processing query agent workflow: {e}")
-            
-            # Contextual fallback response if Agent fails
-            return {
-                "status": "success",
-                "question": question,
-                "answer": (
-                    "I encountered an issue executing that dynamic lookup. "
-                    "You can try rephrasing or asking standard queries such as "
-                    "'total revenue', 'sales by product', 'customers by region', or 'order count'."
-                ),
-                "context_used": False,
-                "fallback": True,
-            }
-
-    @staticmethod
-    def _format_sales_order_rows(rows):
-        """Format order rows as a readable markdown list for the UI."""
-        if not rows:
-            return "No sales orders found."
-
-        lines = ["Here are the sales orders:"]
-        for row in rows:
-            order_id = row.get("order_id")
-            customer_id = row.get("customer_id")
-            product = row.get("product")
-            amount = row.get("amount")
-            order_date = row.get("order_date")
-            lines.append(
-                f"* **Order ID:** {order_id}, **Customer ID:** {customer_id}, **Product:** {product}, **Amount:** ${float(amount):,.2f}, **Order Date:** {order_date}"
-            )
-        return "\n\n".join(lines)
-
-    def _fast_path_answer(self, question: str):
-        """Interprets common intents and minimalist keyword queries without an LLM round trip."""
-        normalized = re.sub(r"[^a-z0-9 ]", " ", question.lower())
-        normalized = " ".join(normalized.split())
-
-        # Greeting & standard meta responses
+    def _fast_path_answer(self, question):
+        """Serve frequent dashboard questions directly from the database."""
+        normalized = " ".join(re.sub(r"[^a-z0-9 ]", " ", question.lower()).split())
         if normalized in {"hello", "hi", "hey", "good morning", "good afternoon"}:
-            return self._instant_response(question, "Hello. Ask me about your sales, revenue, or customer distributions.")
-
+            return self._instant_response(question, "Hello. Ask me about sales, revenue, or customers.")
         if normalized in {"thanks", "thank you", "thx"}:
-            return self._instant_response(question, "You are welcome! Let me know if you need more data analysis.")
-
+            return self._instant_response(question, "You are welcome!")
         if normalized in {"help", "what can you do"}:
-            return self._instant_response(
-                question,
-                "I can analyze database records for metrics on sales volume, product revenue, regional customer density, and average order metrics.",
-            )
+            return self._instant_response(question, "I can analyze sales, products, customers, regions, and order metrics.")
 
-        # Fast path for common queries that should not involve the slow SQL agent
-        if (
-            "sales order" in normalized or "sales orders" in normalized or "show orders" in normalized
-            or ("order" in normalized and "sales" in normalized)
-        ):
-            query = text(
-                "SELECT order_id, customer_id, product, amount, order_date "
-                "FROM orders ORDER BY order_date DESC LIMIT 10"
-            )
-            with self.db_manager.engine.connect() as connection:
-                rows = connection.execute(query).mappings().all()
-            return {
-                "status": "success",
-                "question": question,
-                "answer": self._format_sales_order_rows(rows),
-                "context_used": False,
-                "fast_path": True,
-            }
-
-        # Keyword mapping to SQL queries
-        if "total revenue" in normalized or "total sales" in normalized or normalized in {"revenue", "total revenue"}:
-            query = text("SELECT COALESCE(SUM(amount), 0) AS total_revenue FROM orders")
-            answer_template = "Total revenue is ${:,.2f}."
-
-        elif (
-            "sales by product" in normalized
-            or "revenue by product" in normalized
-            or normalized in {"sales", "sales report"}
-        ):
-            query = text(
-                "SELECT product, SUM(amount) AS revenue "
-                "FROM orders GROUP BY product ORDER BY revenue DESC"
-            )
-            answer_template = None
-
+        query, answer_template = None, None
+        if "sales order" in normalized or "show orders" in normalized:
+            query = "SELECT order_id, customer_id, product, amount, order_date FROM orders ORDER BY order_date DESC"
+        elif "total revenue" in normalized or "total sales" in normalized or normalized == "revenue":
+            query, answer_template = "SELECT COALESCE(SUM(amount), 0) AS total_revenue FROM orders", "Total revenue is ${:,.2f}."
+        elif "sales by product" in normalized or "revenue by product" in normalized or normalized in {"sales", "sales report"}:
+            query = "SELECT product, SUM(amount) AS revenue FROM orders GROUP BY product ORDER BY revenue DESC"
         elif ("region" in normalized and "customer" in normalized) or normalized in {"customers", "regions"}:
-            query = text(
-                "SELECT region, COUNT(*) AS customer_count "
-                "FROM customers GROUP BY region ORDER BY customer_count DESC"
-            )
-            answer_template = None
-
+            query = "SELECT region, COUNT(*) AS customer_count FROM customers GROUP BY region ORDER BY customer_count DESC"
         elif "average" in normalized and "order" in normalized and "amount" in normalized:
-            query = text(
-                "SELECT product, AVG(amount) AS average_amount "
-                "FROM orders GROUP BY product ORDER BY average_amount DESC"
-            )
-            answer_template = None
-
+            query = "SELECT product, AVG(amount) AS average_amount FROM orders GROUP BY product ORDER BY average_amount DESC"
         elif "how many" in normalized and "order" in normalized:
-            query = text("SELECT COUNT(*) AS order_count FROM orders")
-            answer_template = "There are {} orders in total."
-
-        else:
+            query, answer_template = "SELECT COUNT(*) AS order_count FROM orders", "There are {} orders in total."
+        if query is None:
             return None
 
-        # Execute direct SQL via Engine Connection
-        with self.db_manager.engine.connect() as connection:
-            rows = connection.execute(query).mappings().all()
-
+        rows = self.db_manager.execute_safe_select(query)
         if answer_template:
-            val_key = "total_revenue" if "total_revenue" in rows[0] else "order_count"
-            value = rows[0].get(val_key)
-            answer = answer_template.format(value if "{}" in answer_template else float(value))
-            
-        elif rows and "average_amount" in rows[0]:
-            answer = "\n".join(
-                f"- {row['product']}: ${float(row['average_amount']):,.2f} average"
-                for row in rows
-            )
-        elif rows and "customer_count" in rows[0]:
-            answer = "\n".join(
-                f"- {row['region']}: {row['customer_count']} customers" for row in rows
-            )
+            key = "total_revenue" if "total_revenue" in rows[0] else "order_count"
+            value = float(rows[0][key]) if key == "total_revenue" else rows[0][key]
+            answer = answer_template.format(value)
         else:
-            answer = "\n".join(
-                f"- {row['product']}: ${float(row['revenue']):,.2f}" for row in rows
-            )
-
-        return {
-            "status": "success",
-            "question": question,
-            "answer": answer,
-            "context_used": False,
-            "fast_path": True,
-        }
+            answer = self._format_rows(rows)
+        return {"status": "success", "question": question, "answer": answer, "context_used": False, "fast_path": True}
 
     @staticmethod
-    def _instant_response(question: str, answer: str) -> dict:
-        """Utility wrapper for direct static string responses."""
-        return {
-            "status": "success",
-            "question": question,
-            "answer": answer,
-            "context_used": False,
-            "fast_path": True,
-        }
+    def _instant_response(question, answer):
+        return {"status": "success", "question": question, "answer": answer, "context_used": False, "fast_path": True}
 
-    def get_database_info(self) -> dict:
-        """Retrieve database schema structural metadata for frontend preview components."""
+    def get_database_info(self):
         try:
             schemas = self.db_manager.get_table_schemas()
-            return {
-                "status": "success",
-                "tables": list(schemas.keys()),
-                "schemas": schemas
-            }
-        except Exception as e:
-            logger.error(f"Failed to retrieve database schema info: {e}")
-            return {"status": "error", "error": str(e)}
+            return {"status": "success", "tables": list(schemas), "schemas": schemas}
+        except Exception as error:
+            logger.exception("Failed to retrieve database schema info")
+            return {"status": "error", "error": str(error)}

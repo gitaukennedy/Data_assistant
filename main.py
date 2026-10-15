@@ -79,13 +79,12 @@ def main():
     args = parser.parse_args()
     
     # Verify environment
-    if not os.getenv('GEMINI_API_KEY'):
-        print("Error: GEMINI_API_KEY not set. Please check your .env file.", file=sys.stderr)
-        sys.exit(1)
-    
     if not os.getenv('DATABASE_URL'):
         print("Error: DATABASE_URL not set. Please check your .env file.", file=sys.stderr)
         sys.exit(1)
+
+    if not os.getenv('GEMINI_API_KEY'):
+        print("Warning: GEMINI_API_KEY is not set. Common dashboard questions still work; custom questions will be unavailable.", file=sys.stderr)
     
     # Run selected mode
     if args.mode == 'cli':

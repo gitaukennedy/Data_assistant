@@ -1,66 +1,38 @@
-"""SQL Query Validator to ensure safe database operations."""
+"""Strict allow-list validation for model-generated read-only SQL."""
 import re
-from typing import Tuple
 
 class SQLValidator:
-    """Validates SQL queries to prevent destructive operations."""
-    
-    # Dangerous SQL keywords that are blocked
-    DANGEROUS_KEYWORDS = [
-        'DROP', 'DELETE', 'TRUNCATE', 'ALTER', 'INSERT', 
-        'UPDATE', 'CREATE', 'REPLACE', 'EXEC', 'EXECUTE'
-    ]
-    
+    """Reject anything other than a single, ordinary SELECT statement."""
+
+    FORBIDDEN_TOKENS = {
+        'ALTER', 'ANALYZE', 'CALL', 'COPY', 'CREATE', 'DELETE', 'DO', 'DROP',
+        'EXEC', 'EXECUTE', 'GRANT', 'INSERT', 'MERGE', 'REINDEX', 'REPLACE',
+        'REVOKE', 'TRUNCATE', 'UPDATE', 'VACUUM',
+    }
+    FORBIDDEN_PATTERNS = (
+        r'--', r'/\*', r'\*/', r';', r'\bINTO\b', r'\bFOR\s+(UPDATE|SHARE)\b',
+        r'\bPG_[A-Z0-9_]*', r'\bINFORMATION_SCHEMA\b', r'\bPG_CATALOG\b',
+    )
+
+    @classmethod
+    def is_safe_query(cls, query: str) -> tuple[bool, str]:
+        """Require one comment-free SELECT query with no modifying operations."""
+        if not isinstance(query, str) or not query.strip():
+            return False, 'The generated SQL was empty.'
+        cleaned = query.strip()
+        if not re.match(r'^SELECT\b', cleaned, flags=re.IGNORECASE):
+            return False, 'Only a single SELECT query is allowed.'
+
+        upper = cleaned.upper()
+        if any(re.search(pattern, upper) for pattern in cls.FORBIDDEN_PATTERNS):
+            return False, 'The generated SQL contains a disallowed operation.'
+        if any(re.search(rf'\b{token}\b', upper) for token in cls.FORBIDDEN_TOKENS):
+            return False, 'The generated SQL contains a disallowed operation.'
+        return True, ''
+
     @staticmethod
-    def is_safe_query(query: str) -> Tuple[bool, str]:
-        """Validate if a SQL query is safe to execute.
-        
-        Args:
-            query: SQL query string to validate
-            
-        Returns:
-            Tuple of (is_safe: bool, error_message: str)
-        """
-        # Convert to uppercase for keyword checking
-        query_upper = query.strip().upper()
-        
-        # Check if query starts with SELECT (read-only)
-        if not query_upper.startswith('SELECT'):
-            return False, "Only SELECT queries are allowed. Destructive operations are blocked."
-        
-        # Check for dangerous keywords
-        for keyword in SQLValidator.DANGEROUS_KEYWORDS:
-            if keyword in query_upper:
-                return False, f"Keyword '{keyword}' is not allowed for security reasons."
-        
-        # Check for SQL injection patterns
-        injection_patterns = [
-            r"(--|#|/\*).*",  # Comments
-            r"[;'].*[;']",     # Multiple statements
-            r"(?i)union.*select",  # UNION-based injection
-        ]
-        
-        for pattern in injection_patterns:
-            if re.search(pattern, query):
-                return False, "Potential SQL injection detected."
-        
-        return True, ""
-    
-    @staticmethod
-    def sanitize_query(query: str) -> str:
-        """Sanitize query by removing comments and extra whitespace.
-        
-        Args:
-            query: Raw SQL query
-            
-        Returns:
-            Sanitized query
-        """
-        # Remove SQL comments
-        query = re.sub(r'--.*$', '', query, flags=re.MULTILINE)
-        query = re.sub(r'/\*.*?\*/', '', query, flags=re.DOTALL)
-        
-        # Remove extra whitespace
-        query = ' '.join(query.split())
-        
-        return query.strip()
+    def with_row_limit(query: str, limit: int) -> str:
+        """Add a server-side result cap when the model omitted one."""
+        if re.search(r'\bLIMIT\s+\d+\b', query, flags=re.IGNORECASE):
+            return query.strip()
+        return f'{query.strip()} LIMIT {limit}'

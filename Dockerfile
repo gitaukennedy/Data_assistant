@@ -14,8 +14,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 RUN useradd --create-home --shell /usr/sbin/nologin appuser
 COPY --chown=appuser:appuser . .
 
-# Create chromadb directory
-RUN mkdir -p chromadb && chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app
 USER appuser
 
 # Expose port
